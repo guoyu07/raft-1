@@ -1132,7 +1132,11 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	defer metrics.MeasureSince([]string{"raft", "leader", "dispatchLog"}, now)
 
 	term := r.getCurrentTerm()
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "getTerm"}, now)
+	getTermT := time.Now()
 	lastIndex := r.getLastIndex()
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "getIndex"}, getTermT)
+	getIndexT := time.Now()
 	logs := make([]*Log, len(applyLogs))
 
 	for idx, applyLog := range applyLogs {
@@ -1142,6 +1146,9 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 		applyLog.policy = newMajorityQuorum(len(r.peers) + 1)
 		logs[idx] = &applyLog.log
 	}
+
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "makeLogs"}, getIndexT)
+	makeLogsT := time.Now()
 
 	// Write the log entry locally
 	if err := r.logs.StoreLogs(logs); err != nil {
@@ -1153,16 +1160,27 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 		return
 	}
 
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "writeLogs"}, makeLogsT)
+	writeLogsT := time.Now()
+
 	// Add this to the inflight logs, commit
 	r.leaderState.inflight.StartAll(applyLogs)
 
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "addToInflight"}, writeLogsT)
+	addToInflightT := time.Now()
+
 	// Update the last log since it's on disk now
 	r.setLastLog(lastIndex+uint64(len(applyLogs)), term)
+
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "updateLast"}, addToInflightT)
+	updateLastT := time.Now()
 
 	// Notify the replicators of the new log
 	for _, f := range r.leaderState.replState {
 		asyncNotifyCh(f.triggerCh)
 	}
+
+	metrics.MeasureSince([]string{"raft", "leader", "dispatchLog", "notifyReplicas"}, updateLastT)
 }
 
 // processLogs is used to process all the logs from the lastApplied
