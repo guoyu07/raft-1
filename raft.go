@@ -1151,6 +1151,7 @@ func (r *Raft) dispatchLogs(applyLogs []*logFuture) {
 	makeLogsT := time.Now()
 
 	// Write the log entry locally
+	metrics.AddSample([]string{"raft", "leader", "dispatchLog", "numWritten"}, float32(len(applyLogs)))
 	if err := r.logs.StoreLogs(logs); err != nil {
 		r.logger.Printf("[ERR] raft: Failed to commit logs: %v", err)
 		for _, applyLog := range applyLogs {
